@@ -24,11 +24,13 @@
     "jose": "^6.0.10",
     "pg": "^8.13.1",
     "redis": "^5.0.1",
+    "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
     "@types/pg": "^8.11.6",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

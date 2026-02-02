@@ -12,12 +12,16 @@ import { createAgentRoutes } from "./api/routes/agent.js";
 import { createUsageRoutes } from "./api/routes/usage.js";
 import { createBillingRoutes } from "./api/routes/billing.js";
 import { getHealthMonitor } from "./orchestrator/health-monitor.js";
+import { createGatewayProxy } from "./gateway-proxy/server.js";
 
 // Create database client
 const db = createDbClient();
 
 // Health monitor (only in production with Kubernetes)
 const healthMonitor = env.KUBERNETES_IN_CLUSTER ? getHealthMonitor(db) : null;
+
+// Gateway proxy for WebSocket connections
+const gatewayProxy = createGatewayProxy(db, 3001);
 
 // Create Hono app
 const app = new Hono();
@@ -112,6 +116,7 @@ if (healthMonitor) {
 process.on("SIGTERM", async () => {
 	console.log("SIGTERM received, shutting down...");
 	healthMonitor?.stop();
+	gatewayProxy.close();
 	await db.end();
 	process.exit(0);
 });
@@ -119,6 +124,7 @@ process.on("SIGTERM", async () => {
 process.on("SIGINT", async () => {
 	console.log("SIGINT received, shutting down...");
 	healthMonitor?.stop();
+	gatewayProxy.close();
 	await db.end();
 	process.exit(0);
 });

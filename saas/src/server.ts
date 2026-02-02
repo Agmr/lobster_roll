@@ -11,9 +11,13 @@ import { createAuthRoutes } from "./api/routes/auth.js";
 import { createAgentRoutes } from "./api/routes/agent.js";
 import { createUsageRoutes } from "./api/routes/usage.js";
 import { createBillingRoutes } from "./api/routes/billing.js";
+import { getHealthMonitor } from "./orchestrator/health-monitor.js";
 
 // Create database client
 const db = createDbClient();
+
+// Health monitor (only in production with Kubernetes)
+const healthMonitor = env.KUBERNETES_IN_CLUSTER ? getHealthMonitor(db) : null;
 
 // Create Hono app
 const app = new Hono();
@@ -98,15 +102,23 @@ serve({
 	port: env.PORT,
 });
 
+// Start health monitor in production
+if (healthMonitor) {
+	healthMonitor.start();
+	console.log("Health monitor started");
+}
+
 // Graceful shutdown
 process.on("SIGTERM", async () => {
 	console.log("SIGTERM received, shutting down...");
+	healthMonitor?.stop();
 	await db.end();
 	process.exit(0);
 });
 
 process.on("SIGINT", async () => {
 	console.log("SIGINT received, shutting down...");
+	healthMonitor?.stop();
 	await db.end();
 	process.exit(0);
 });

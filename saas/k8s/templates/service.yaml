@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: moltbot-agent
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-agent
+    tenant-id: "{{tenantId}}"
+spec:
+  type: ClusterIP
+  selector:
+    app: moltbot-agent
+    tenant-id: "{{tenantId}}"
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: gateway
+      protocol: TCP

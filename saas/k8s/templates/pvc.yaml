@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: moltbot-data
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "{{storageClass}}"
+  resources:
+    requests:
+      storage: "{{storageLimit}}"

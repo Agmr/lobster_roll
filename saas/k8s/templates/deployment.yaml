@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moltbot-agent
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-agent
+    tenant-id: "{{tenantId}}"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moltbot-agent
+      tenant-id: "{{tenantId}}"
+  strategy:
+    type: Recreate  # Single instance per tenant
+  template:
+    metadata:
+      labels:
+        app: moltbot-agent
+        tenant-id: "{{tenantId}}"
+      annotations:
+        moltbot.io/user-id: "{{userId}}"
+        moltbot.io/tier: "{{tier}}"
+    spec:
+      serviceAccountName: moltbot-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: moltbot
+          image: "{{agentImage}}"
+          imagePullPolicy: Always
+          ports:
+            - name: gateway
+              containerPort: 18789
+              protocol: TCP
+          env:
+            - name: MOLTBOT_STATE_DIR
+              value: /data/.moltbot
+            - name: MOLTBOT_GATEWAY_PORT
+              value: "18789"
+            - name: MOLTBOT_GATEWAY_BIND
+              value: "0.0.0.0"
+            - name: TENANT_ID
+              value: "{{tenantId}}"
+            - name: USER_ID
+              value: "{{userId}}"
+            # Encryption key from Vault
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: moltbot-secrets
+                  key: encryption-key
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "{{cpuLimit}}"
+              memory: "{{memoryLimit}}"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: gateway
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: gateway
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: moltbot-data
+      terminationGracePeriodSeconds: 30

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{namespace}}"
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+    user-id: "{{userId}}"
+  annotations:
+    moltbot.io/created-at: "{{createdAt}}"
+    moltbot.io/tier: "{{tier}}"

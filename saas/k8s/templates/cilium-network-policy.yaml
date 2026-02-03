@@ -1,0 +1,122 @@
+# Cilium Network Policy for FQDN-based egress filtering
+# This provides domain-level control over outbound traffic
+# Requires Cilium CNI to be installed in the cluster
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tenant-egress-fqdn
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+    policy-type: egress-fqdn
+    managed-by: moltbot-saas
+spec:
+  endpointSelector:
+    matchLabels:
+      app: moltbot-agent
+  egress:
+    # Allow DNS queries
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+
+    # AI Provider APIs
+    - toFQDNs:
+        - matchName: "api.anthropic.com"
+        - matchName: "api.openai.com"
+        - matchName: "generativelanguage.googleapis.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+
+    # Messaging Platform APIs (based on tenant config)
+    {{#if enableTelegram}}
+    - toFQDNs:
+        - matchName: "api.telegram.org"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{/if}}
+
+    {{#if enableDiscord}}
+    - toFQDNs:
+        - matchName: "discord.com"
+        - matchName: "gateway.discord.gg"
+        - matchName: "cdn.discordapp.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{/if}}
+
+    {{#if enableSlack}}
+    - toFQDNs:
+        - matchName: "slack.com"
+        - matchName: "api.slack.com"
+        - matchName: "wss-primary.slack.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{/if}}
+
+    {{#if enableWhatsApp}}
+    - toFQDNs:
+        - matchPattern: "*.whatsapp.net"
+        - matchPattern: "*.whatsapp.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "5222"
+              protocol: TCP
+    {{/if}}
+
+    # Custom domains (tenant-specific)
+    {{#each customDomains}}
+    - toFQDNs:
+        - matchName: "{{this}}"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{/each}}
+---
+# Cilium Ingress Policy
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tenant-ingress
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+    policy-type: ingress
+    managed-by: moltbot-saas
+spec:
+  endpointSelector:
+    matchLabels:
+      app: moltbot-agent
+  ingress:
+    # Only allow from gateway proxy
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: moltbot-saas
+            app: gateway-proxy
+      toPorts:
+        - ports:
+            - port: "18789"
+              protocol: TCP

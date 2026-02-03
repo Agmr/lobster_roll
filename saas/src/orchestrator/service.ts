@@ -3,6 +3,12 @@ import { withTransaction } from "../db/client.js";
 import { deriveTenantKey, generateSecureRandomString } from "../crypto/index.js";
 import { K8sClient, getK8sClient } from "./k8s-client.js";
 import type { TenantConfig } from "./k8s-client.js";
+import {
+	NetworkPolicyManager,
+	createNetworkPolicyManager,
+	DEFAULT_EGRESS_CONFIG,
+	type EgressConfig,
+} from "../network/index.js";
 
 export interface ProvisionResult {
 	success: boolean;
@@ -31,12 +37,14 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
  */
 export class OrchestratorService {
 	private k8s: K8sClient;
+	private networkPolicy: NetworkPolicyManager;
 
 	constructor(
 		private db: DbClient,
 		k8sClient?: K8sClient
 	) {
 		this.k8s = k8sClient ?? getK8sClient();
+		this.networkPolicy = createNetworkPolicyManager(this.k8s);
 	}
 
 	/**
@@ -105,6 +113,13 @@ export class OrchestratorService {
 			};
 
 			await this.k8s.provisionTenant(config);
+
+			// Apply network policies for tenant isolation
+			await this.networkPolicy.applyTenantPolicies(
+				tenantResult.id,
+				namespace,
+				DEFAULT_EGRESS_CONFIG
+			);
 
 			// Update status to active
 			await this.db.query(
@@ -305,6 +320,9 @@ export class OrchestratorService {
 		const tenant = result.rows[0]!;
 
 		try {
+			// Remove network policies first
+			await this.networkPolicy.removeTenantPolicies(tenant.id, tenant.namespace);
+
 			// Delete Kubernetes resources
 			await this.k8s.deleteTenant(tenant.namespace);
 
@@ -318,6 +336,71 @@ export class OrchestratorService {
 		} catch (error) {
 			return {
 				success: false,
+				error: error instanceof Error ? error.message : "Unknown error",
+			};
+		}
+	}
+
+	/**
+	 * Update egress configuration for a tenant
+	 */
+	async updateEgressConfig(
+		userId: string,
+		egressConfig: EgressConfig
+	): Promise<{ success: boolean; error?: string }> {
+		const result = await this.db.query<TenantRow>(
+			"SELECT * FROM tenants WHERE user_id = $1",
+			[userId]
+		);
+
+		if (result.rows.length === 0) {
+			return { success: false, error: "Tenant not found" };
+		}
+
+		const tenant = result.rows[0]!;
+
+		if (tenant.status === "terminated") {
+			return { success: false, error: "Tenant is terminated" };
+		}
+
+		try {
+			await this.networkPolicy.updateEgressConfig(
+				tenant.id,
+				tenant.namespace,
+				egressConfig
+			);
+			return { success: true };
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : "Unknown error",
+			};
+		}
+	}
+
+	/**
+	 * Validate network policies for a tenant
+	 */
+	async validateNetworkPolicies(
+		userId: string
+	): Promise<{ valid: boolean; missing: string[]; error?: string }> {
+		const result = await this.db.query<TenantRow>(
+			"SELECT * FROM tenants WHERE user_id = $1",
+			[userId]
+		);
+
+		if (result.rows.length === 0) {
+			return { valid: false, missing: [], error: "Tenant not found" };
+		}
+
+		const tenant = result.rows[0]!;
+
+		try {
+			return await this.networkPolicy.validatePolicies(tenant.namespace);
+		} catch (error) {
+			return {
+				valid: false,
+				missing: [],
 				error: error instanceof Error ? error.message : "Unknown error",
 			};
 		}

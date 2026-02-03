@@ -1,3 +1,23 @@
+# Deny-all baseline policy
+# This ensures no traffic flows unless explicitly allowed
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-baseline
+  namespace: "{{namespace}}"
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+    policy-type: baseline
+    managed-by: moltbot-saas
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Tenant isolation policy
+# Allows specific ingress from gateway and egress to allowed APIs
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -6,6 +26,8 @@ metadata:
   labels:
     app: moltbot-tenant
     tenant-id: "{{tenantId}}"
+    policy-type: isolation
+    managed-by: moltbot-saas
 spec:
   podSelector:
     matchLabels:
@@ -18,7 +40,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              app: moltbot-control-plane
+              name: moltbot-saas
           podSelector:
             matchLabels:
               app: gateway-proxy
@@ -26,16 +48,66 @@ spec:
         - protocol: TCP
           port: 18789
   egress:
-    # Allow DNS resolution
+    # Allow DNS resolution (kube-dns)
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
           podSelector:
             matchLabels:
               k8s-app: kube-dns
       ports:
         - protocol: UDP
           port: 53
-    # Allow HTTPS to external AI providers
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS to external AI providers only
+    # Block all internal cluster traffic (private IP ranges)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Egress domain filter (requires Cilium or Calico Enterprise)
+# This is a placeholder - actual implementation depends on CNI
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-api-whitelist
+  namespace: "{{namespace}}"
+  annotations:
+    # Allowed domains (for CNIs that support FQDN filtering)
+    moltbot.io/allowed-domains: |
+      api.anthropic.com
+      api.openai.com
+      generativelanguage.googleapis.com
+      api.telegram.org
+      discord.com
+      gateway.discord.gg
+      slack.com
+      api.slack.com
+  labels:
+    app: moltbot-tenant
+    tenant-id: "{{tenantId}}"
+    policy-type: egress-whitelist
+    managed-by: moltbot-saas
+spec:
+  podSelector:
+    matchLabels:
+      app: moltbot-agent
+  policyTypes:
+    - Egress
+  egress:
+    # This policy works with standard NetworkPolicy
+    # For FQDN filtering, use Cilium CiliumNetworkPolicy
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

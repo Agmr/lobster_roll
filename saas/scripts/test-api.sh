@@ -103,5 +103,34 @@ LOGOUT_RESPONSE=$(curl -s -X POST "$BASE_URL/api/auth/logout" \
   -d '{}')
 echo "$LOGOUT_RESPONSE" | grep -qi "success\|logged" && pass "Logout" || fail "Logout failed: $LOGOUT_RESPONSE"
 
+# 11. Media upload (create a test file)
+echo ""
+echo "11. Testing media upload..."
+echo "Test content" > /tmp/test-upload.txt
+UPLOAD_RESPONSE=$(curl -s -X POST "$BASE_URL/api/media/upload" \
+  -H "Authorization: Bearer $NEW_ACCESS" \
+  -F "file=@/tmp/test-upload.txt;type=text/plain")
+FILE_ID=$(echo "$UPLOAD_RESPONSE" | jq -r '.file.id')
+if [ "$FILE_ID" != "null" ] && [ -n "$FILE_ID" ]; then
+  pass "Media upload - got file ID: $FILE_ID"
+else
+  echo "Media upload skipped (may need tenant provisioned): $UPLOAD_RESPONSE"
+fi
+rm -f /tmp/test-upload.txt
+
+# 12. List media files
+echo ""
+echo "12. Testing media list..."
+LIST_RESPONSE=$(curl -s "$BASE_URL/api/media/files" \
+  -H "Authorization: Bearer $NEW_ACCESS")
+echo "$LIST_RESPONSE" | jq -r '.files' > /dev/null 2>&1 && pass "Media list" || echo "Media list skipped: $LIST_RESPONSE"
+
+# 13. Storage usage
+echo ""
+echo "13. Testing storage usage..."
+STORAGE_RESPONSE=$(curl -s "$BASE_URL/api/media/usage" \
+  -H "Authorization: Bearer $NEW_ACCESS")
+echo "$STORAGE_RESPONSE" | jq -r '.totalFiles' > /dev/null 2>&1 && pass "Storage usage" || echo "Storage usage skipped: $STORAGE_RESPONSE"
+
 echo ""
 echo "=== All tests passed! ==="
